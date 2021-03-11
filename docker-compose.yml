@@ -1,21 +1,89 @@
 version: '3'
-
 services:
-  nginx:
-    image: nginx:1.15-alpine
-    restart: unless-stopped
+
+  #PHP Service
+  php:
+    build:
+      context: ./php
+      dockerfile: Dockerfile
+    image: rti/menuku:php-7.3-alpine
+    container_name: php
+    restart: always
+    tty: true
+    ports:
+      - "9000:9000"
+    environment:
+      TZ: Asia/Jakarta
+    working_dir: /var/www/html
     volumes:
-      - ./data/nginx:/etc/nginx/conf.d
-      - ./data/certbot/conf:/etc/letsencrypt
-      - ./data/certbot/www:/var/www/certbot
+      - /home/centos/menuku/nginx/letsencrypt:/etc/letsencrypt:z
+      - /home/centos/menuku/nginx/letsencrypt-var:/var/lib/letsencrypt:z
+      - /home/centos/menuku/php/laravel:/var/www/html:z
+      - /home/centos/menuku/php/php.ini:/usr/local/etc/php/php.ini:Z
+    links:
+      - db
+#    networks:
+#      - app-network
+
+  #Nginx Service
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    image: rti/menuku-app:laravel-v6
+    container_name: nginx
+    restart: always
+    tty: true
     ports:
       - "80:80"
       - "443:443"
     command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+    environment:
+      TZ: Asia/Jakarta
+    volumes:
+      - /home/centos/menuku/nginx/conf.d:/etc/nginx/conf.d:Z
+      - /home/centos/menuku/php/laravel:/var/www/html:z
+      - /home/centos/menuku/nginx/letsencrypt:/etc/letsencrypt:z
+      - /home/centos/menuku/nginx/letsencrypt-var:/var/lib/letsencrypt:z
+    depends_on:
+      - php
+      - db
+    links:
+      - php
+      - db
+#    networks:
+#      - app-network
+
+  #MariaDB Service
+  db:
+    image: mariadb:10.5.9
+    container_name: db
+    restart: always
+    tty: true
+    ports:
+      - "3306:3306"
+    environment:
+      TZ: Asia/Jakarta
+      MYSQL_DATABASE: menukucoid
+      MYSQL_ROOT_PASSWORD: Password123
+    volumes:
+      - /data/mysql:/var/lib/mysql:Z
+#    networks:
+#      - app-network
+
+  # Let's Encrypt using Certbot for SSL
   certbot:
     image: certbot/certbot
     restart: unless-stopped
     volumes:
-      - ./data/certbot/conf:/etc/letsencrypt
-      - ./data/certbot/www:/var/www/certbot
+      - /home/centos/menuku/nginx/letsencrypt:/etc/letsencrypt:z
+      - /home/centos/menuku/nginx/letsencrypt-var:/var/lib/letsencrypt:z
+      - /home/centos/menuku/php/laravel:/var/www/html:z
+    depends_on:
+      - nginx
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
+#Docker Networks
+#networks:
+#  app-network:
+#    driver: bridge
